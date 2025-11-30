@@ -1,0 +1,493 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Neon Cloud Notes | Firebase Sync</title>
+    
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Font Awesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    fontFamily: { sans: ['Outfit', 'sans-serif'] },
+                    colors: {
+                        glass: "rgba(30, 41, 59, 0.7)",
+                        neonPurple: "#d946ef",
+                        neonBlue: "#0ea5e9",
+                    },
+                    animation: {
+                        'blob': 'blob 7s infinite',
+                        'fade-in': 'fadeIn 0.4s ease-out forwards',
+                        'spin-slow': 'spin 3s linear infinite',
+                    },
+                    keyframes: {
+                        blob: {
+                            "0%": { transform: "translate(0px, 0px) scale(1)" },
+                            "33%": { transform: "translate(30px, -50px) scale(1.1)" },
+                            "66%": { transform: "translate(-20px, 20px) scale(0.9)" },
+                            "100%": { transform: "translate(0px, 0px) scale(1)" }
+                        },
+                        fadeIn: {
+                            "0%": { opacity: "0", transform: "translateY(10px)" },
+                            "100%": { opacity: "1", transform: "translateY(0)" }
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+
+    <style>
+        body { background-color: #020617; color: #fff; overflow: hidden; }
+        
+        .glass-sidebar {
+            background: rgba(15, 23, 42, 0.6);
+            backdrop-filter: blur(16px);
+            border-right: 1px solid rgba(255, 255, 255, 0.05);
+        }
+        .glass-card {
+            background: rgba(30, 41, 59, 0.4);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            box-shadow: 0 4px 30px rgba(0, 0, 0, 0.1);
+        }
+        
+        .nav-item.active {
+            background: rgba(217, 70, 239, 0.15);
+            color: #d946ef;
+            border-right: 3px solid #d946ef;
+        }
+        
+        .mobile-nav-item.active i {
+            color: #d946ef;
+            text-shadow: 0 0 10px #d946ef;
+        }
+
+        .custom-scroll::-webkit-scrollbar { width: 6px; }
+        .custom-scroll::-webkit-scrollbar-track { background: transparent; }
+        .custom-scroll::-webkit-scrollbar-thumb { background: #334155; border-radius: 10px; }
+        .custom-scroll::-webkit-scrollbar-thumb:hover { background: #475569; }
+    </style>
+</head>
+<body class="h-screen w-screen flex text-gray-100">
+
+    <!-- Background Animation -->
+    <div class="fixed inset-0 z-[-1]">
+        <div class="absolute top-0 left-0 w-96 h-96 bg-purple-600/20 rounded-full mix-blend-screen filter blur-3xl animate-blob"></div>
+        <div class="absolute bottom-0 right-0 w-96 h-96 bg-blue-600/20 rounded-full mix-blend-screen filter blur-3xl animate-blob animation-delay-2000"></div>
+    </div>
+
+    <!-- DESKTOP SIDEBAR -->
+    <aside class="hidden md:flex flex-col w-64 glass-sidebar h-full z-20 transition-all">
+        <div class="h-20 flex items-center px-8 border-b border-white/5">
+            <div class="w-8 h-8 rounded-lg bg-gradient-to-br from-purple-500 to-blue-500 flex items-center justify-center mr-3 shadow-lg shadow-purple-500/20">
+                <i class="fa-solid fa-cloud text-white text-sm"></i>
+            </div>
+            <h1 class="text-xl font-bold tracking-wide">Cloud<span class="font-light text-gray-400">Notes</span></h1>
+        </div>
+
+        <nav class="flex-1 py-6 space-y-2">
+            <button id="nav-dashboard" class="nav-item active w-full flex items-center px-8 py-4 text-gray-400 hover:text-white hover:bg-white/5 transition-all group">
+                <i class="fa-solid fa-layer-group w-6 group-hover:scale-110 transition-transform"></i>
+                <span class="font-medium">Dashboard</span>
+            </button>
+            <button id="nav-pinned" class="nav-item w-full flex items-center px-8 py-4 text-gray-400 hover:text-white hover:bg-white/5 transition-all group">
+                <i class="fa-solid fa-thumbtack w-6 group-hover:scale-110 transition-transform"></i>
+                <span class="font-medium">Pinned Notes</span>
+                <span id="sidebarPinCount" class="ml-auto text-xs bg-white/10 px-2 py-0.5 rounded-full">0</span>
+            </button>
+        </nav>
+
+        <div class="p-6 border-t border-white/5">
+            <div class="glass-card rounded-xl p-4 flex items-center gap-3">
+                <div class="w-2 h-2 rounded-full bg-green-500 animate-pulse"></div>
+                <p class="text-xs text-gray-400 uppercase">Firebase Online</p>
+            </div>
+        </div>
+    </aside>
+
+    <!-- MAIN CONTENT AREA -->
+    <main class="flex-1 flex flex-col h-full relative overflow-hidden">
+        
+        <header class="h-20 flex items-center justify-between px-6 md:px-10 border-b border-white/5 glass-card z-10">
+            <h2 id="pageTitle" class="text-2xl font-semibold bg-clip-text text-transparent bg-gradient-to-r from-white to-gray-400">Dashboard</h2>
+            
+            <div class="flex items-center gap-4">
+                <div class="relative group hidden sm:block">
+                    <input type="text" id="searchInput" placeholder="Search..." 
+                        class="bg-black/20 border border-white/10 rounded-full py-2 pl-10 pr-4 w-64 text-sm focus:outline-none focus:border-purple-500 focus:ring-1 focus:ring-purple-500 transition-all">
+                    <i class="fa-solid fa-search absolute left-3.5 top-2.5 text-gray-500 group-focus-within:text-purple-400"></i>
+                </div>
+                <button id="addBtnDesktop" class="hidden md:flex items-center gap-2 bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-500 hover:to-blue-500 px-5 py-2 rounded-full text-sm font-medium shadow-lg shadow-purple-500/25 transition-all transform hover:scale-105 active:scale-95">
+                    <i class="fa-solid fa-plus"></i> New Note
+                </button>
+            </div>
+        </header>
+
+        <!-- Mobile Search -->
+        <div class="md:hidden px-4 pt-4 pb-2">
+            <input type="text" id="mobileSearchInput" placeholder="Search notes..." 
+                class="w-full bg-white/5 border border-white/10 rounded-xl py-2.5 px-4 text-sm focus:outline-none focus:border-purple-500">
+        </div>
+
+        <!-- Scrollable Content -->
+        <div class="flex-1 overflow-y-auto custom-scroll p-4 md:p-10 pb-24 md:pb-10" id="mainContainer">
+            
+            <!-- Loader -->
+            <div id="loader" class="flex flex-col items-center justify-center mt-20">
+                <i class="fa-solid fa-circle-notch text-4xl text-neonPurple animate-spin"></i>
+                <p class="mt-4 text-gray-400 text-sm">Syncing with Firebase...</p>
+            </div>
+
+            <div id="notesGrid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 hidden">
+                <!-- Notes will be injected here via JS -->
+            </div>
+            
+            <!-- Empty State -->
+            <div id="emptyState" class="hidden h-full flex-col items-center justify-center text-center opacity-50 mt-10">
+                <i id="emptyIcon" class="fa-regular fa-folder-open text-5xl mb-4 text-gray-500"></i>
+                <h3 id="emptyText" class="text-xl font-medium text-gray-300">No notes found</h3>
+            </div>
+        </div>
+    </main>
+
+    <!-- MOBILE BOTTOM NAV -->
+    <nav class="md:hidden fixed bottom-0 w-full h-20 bg-[#0f172a]/90 backdrop-blur-xl border-t border-white/10 flex justify-around items-center z-30 px-2">
+        <button id="mob-dashboard" class="mobile-nav-item active flex flex-col items-center p-3 text-gray-400">
+            <i class="fa-solid fa-house text-xl mb-1 transition-colors"></i>
+            <span class="text-[10px]">Home</span>
+        </button>
+        
+        <button id="addBtnMobile" class="w-14 h-14 bg-gradient-to-r from-purple-500 to-pink-500 rounded-full flex items-center justify-center -mt-8 shadow-lg shadow-purple-500/40 border-4 border-[#020617]">
+            <i class="fa-solid fa-plus text-white text-xl"></i>
+        </button>
+        
+        <button id="mob-pinned" class="mobile-nav-item flex flex-col items-center p-3 text-gray-400">
+            <i class="fa-solid fa-thumbtack text-xl mb-1 transition-colors"></i>
+            <span class="text-[10px]">Pinned</span>
+        </button>
+    </nav>
+
+    <!-- MODAL -->
+    <div id="noteModal" class="fixed inset-0 z-50 hidden">
+        <div class="absolute inset-0 bg-black/60 backdrop-blur-sm transition-opacity" id="modalBackdrop"></div>
+        <div class="flex items-center justify-center h-full p-4 pointer-events-none">
+            <div class="bg-[#1e293b] w-full max-w-lg rounded-2xl border border-white/10 shadow-2xl p-6 pointer-events-auto transform transition-all scale-95 opacity-0" id="modalContent">
+                <div class="flex justify-between items-center mb-6">
+                    <h3 class="text-xl font-bold text-white">Write Note</h3>
+                    <button id="closeModalBtn" class="w-8 h-8 rounded-full bg-white/5 hover:bg-white/10 flex items-center justify-center text-gray-400 transition">
+                        <i class="fa-solid fa-xmark"></i>
+                    </button>
+                </div>
+                <input type="text" id="noteTitle" placeholder="Title..." class="w-full bg-transparent text-xl font-semibold text-white placeholder-gray-500 border-none focus:ring-0 mb-4 p-0 focus:outline-none">
+                <textarea id="noteBody" rows="8" placeholder="Start typing..." class="w-full bg-transparent text-gray-300 placeholder-gray-600 border-none focus:ring-0 resize-none p-0 scrollbar-hide text-base leading-relaxed focus:outline-none"></textarea>
+
+                <div class="flex justify-between items-center mt-6 pt-4 border-t border-white/5">
+                    <div class="text-xs text-gray-500">Auto-saves to cloud</div>
+                    <button id="saveNoteBtn" class="bg-white text-black font-semibold px-6 py-2 rounded-lg hover:bg-gray-200 transition active:scale-95">
+                        Save
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- TOAST -->
+    <div id="toast" class="fixed top-6 right-6 z-50 transform translate-x-60 opacity-0 transition-all duration-300">
+        <div class="bg-gray-800 border border-white/10 text-white px-4 py-3 rounded-xl shadow-2xl flex items-center gap-3">
+            <div id="toastDot" class="w-2 h-2 rounded-full bg-green-400"></div>
+            <span id="toastMsg" class="text-sm font-medium">Operation Successful</span>
+        </div>
+    </div>
+
+    <!-- JAVASCRIPT TYPE MODULE (Required for Firebase) -->
+    <script type="module">
+        // --- 1. Import Firebase SDKs ---
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-app.js";
+        import { getDatabase, ref, push, set, onValue, remove, update } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-database.js";
+
+        // --- 2. Firebase Configuration (From your JSON) ---
+        const firebaseConfig = {
+            apiKey: "AIzaSyA3Sxew--QcQbrTDkR1VoBTCBNxFK38JMw",
+            authDomain: "telecome-9c7e0.firebaseapp.com",
+            databaseURL: "https://telecome-9c7e0-default-rtdb.firebaseio.com",
+            projectId: "telecome-9c7e0",
+            storageBucket: "telecome-9c7e0.firebasestorage.app",
+            messagingSenderId: "334926468571",
+            appId: "1:334926468571:web:placeholder_for_web_id" 
+        };
+
+        // --- 3. Initialize Firebase ---
+        const app = initializeApp(firebaseConfig);
+        const db = getDatabase(app);
+        const notesRef = ref(db, 'notes');
+
+        // --- Variables ---
+        let notes = [];
+        let currentView = 'dashboard';
+        let isEditing = false;
+        let editId = null;
+
+        // --- UI Selectors ---
+        const grid = document.getElementById('notesGrid');
+        const loader = document.getElementById('loader');
+        const emptyState = document.getElementById('emptyState');
+        const modal = document.getElementById('noteModal');
+        const modalContent = document.getElementById('modalContent');
+        const modalBackdrop = document.getElementById('modalBackdrop');
+        const noteTitleInput = document.getElementById('noteTitle');
+        const noteBodyInput = document.getElementById('noteBody');
+        const searchInput = document.getElementById('searchInput');
+        const mobileSearchInput = document.getElementById('mobileSearchInput');
+
+        // --- 4. Read Data (Realtime Listener) ---
+        onValue(notesRef, (snapshot) => {
+            const data = snapshot.val();
+            notes = [];
+            
+            // Convert Firebase Object to Array
+            if (data) {
+                for (let id in data) {
+                    notes.push({ id, ...data[id] });
+                }
+                // Sort by date (newest first)
+                notes.sort((a, b) => b.date - a.date);
+            }
+
+            loader.classList.add('hidden'); // Hide loader
+            renderApp(searchInput.value || mobileSearchInput.value); // Update UI
+        });
+
+        // --- 5. Navigation Logic ---
+        window.switchView = (view) => {
+            currentView = view;
+            
+            // Desktop Active State
+            document.getElementById('nav-dashboard').classList.toggle('active', view === 'dashboard');
+            document.getElementById('nav-pinned').classList.toggle('active', view === 'pinned');
+            
+            // Mobile Active State
+            document.getElementById('mob-dashboard').classList.toggle('active', view === 'dashboard');
+            document.getElementById('mob-pinned').classList.toggle('active', view === 'pinned');
+            
+            // Mobile Icon Colors
+            document.querySelector('#mob-dashboard i').classList.toggle('text-neonPurple', view === 'dashboard');
+            document.querySelector('#mob-pinned i').classList.toggle('text-neonPurple', view === 'pinned');
+
+            // Header Title
+            document.getElementById('pageTitle').innerText = view === 'dashboard' ? 'Dashboard' : 'Pinned Notes';
+
+            renderApp();
+        };
+
+        // Event Listeners for Nav (Manual Binding because module scope)
+        document.getElementById('nav-dashboard').onclick = () => window.switchView('dashboard');
+        document.getElementById('nav-pinned').onclick = () => window.switchView('pinned');
+        document.getElementById('mob-dashboard').onclick = () => window.switchView('dashboard');
+        document.getElementById('mob-pinned').onclick = () => window.switchView('pinned');
+
+
+        // --- 6. Rendering Logic ---
+        function renderApp(query = '') {
+            grid.innerHTML = '';
+            
+            // Filter Logic
+            let filteredNotes = notes;
+
+            if (currentView === 'pinned') {
+                filteredNotes = notes.filter(n => n.isPinned);
+            }
+
+            if (query) {
+                const lowerQ = query.toLowerCase();
+                filteredNotes = filteredNotes.filter(n => 
+                    (n.title && n.title.toLowerCase().includes(lowerQ)) || 
+                    (n.body && n.body.toLowerCase().includes(lowerQ))
+                );
+            }
+
+            // Update Counts
+            document.getElementById('sidebarPinCount').innerText = notes.filter(n => n.isPinned).length;
+
+            // Empty State
+            if (filteredNotes.length === 0) {
+                emptyState.classList.remove('hidden');
+                emptyState.classList.add('flex');
+                grid.classList.add('hidden');
+                
+                const emptyText = document.getElementById('emptyText');
+                if(query) emptyText.innerText = "No search results";
+                else if(currentView === 'pinned') emptyText.innerText = "No pinned notes yet";
+                else emptyText.innerText = "Start by creating a note";
+                return;
+            } else {
+                emptyState.classList.add('hidden');
+                emptyState.classList.remove('flex');
+                grid.classList.remove('hidden');
+            }
+
+            // Generate Cards
+            filteredNotes.forEach(note => {
+                const card = document.createElement('div');
+                card.className = 'glass-card rounded-2xl p-6 flex flex-col h-60 relative group hover:-translate-y-1 transition-transform duration-300 animate-fade-in';
+                if(note.isPinned) card.classList.add('border-purple-500/30');
+
+                const pinClass = note.isPinned ? 'text-neonPurple rotate-0' : 'text-gray-500 rotate-45 hover:text-white';
+
+                card.innerHTML = `
+                    <div class="flex justify-between items-start mb-3">
+                        <h4 class="text-lg font-bold text-white truncate w-3/4">${note.title}</h4>
+                        <button data-id="${note.id}" class="pin-btn transition-transform duration-300 ${pinClass}">
+                            <i class="fa-solid fa-thumbtack pointer-events-none"></i>
+                        </button>
+                    </div>
+                    <p class="text-gray-400 text-sm leading-relaxed overflow-hidden mb-4 flex-1 break-words whitespace-pre-wrap">${note.body ? note.body.substring(0, 150) + (note.body.length > 150 ? '...' : '') : ''}</p>
+                    
+                    <div class="flex items-center justify-between mt-auto pt-4 border-t border-white/5 opacity-80 group-hover:opacity-100 transition-opacity">
+                        <span class="text-[10px] text-gray-500 font-mono">${new Date(note.date).toLocaleDateString()}</span>
+                        <div class="flex gap-3">
+                            <button data-id="${note.id}" class="edit-btn text-gray-400 hover:text-blue-400 transition"><i class="fa-solid fa-pen-to-square pointer-events-none"></i></button>
+                            <button data-id="${note.id}" class="del-btn text-gray-400 hover:text-red-400 transition"><i class="fa-solid fa-trash pointer-events-none"></i></button>
+                        </div>
+                    </div>
+                `;
+                grid.appendChild(card);
+            });
+
+            // Re-attach event listeners for dynamically created buttons
+            document.querySelectorAll('.pin-btn').forEach(b => b.onclick = (e) => togglePin(e.target.dataset.id));
+            document.querySelectorAll('.edit-btn').forEach(b => b.onclick = (e) => editNote(e.target.dataset.id));
+            document.querySelectorAll('.del-btn').forEach(b => b.onclick = (e) => deleteNote(e.target.dataset.id));
+        }
+
+
+        // --- 7. CRUD Operations (Firebase) ---
+
+        // SAVE / CREATE
+        window.saveNote = () => {
+            const title = noteTitleInput.value.trim();
+            const body = noteBodyInput.value.trim();
+
+            if (!title && !body) {
+                showToast('Empty note discarded', 'error');
+                return;
+            }
+
+            if (isEditing && editId) {
+                // UPDATE in Firebase
+                update(ref(db, 'notes/' + editId), {
+                    title: title,
+                    body: body,
+                    date: Date.now()
+                }).then(() => {
+                    showToast('Note Updated');
+                    closeModal();
+                });
+            } else {
+                // CREATE (PUSH) in Firebase
+                push(notesRef, {
+                    title: title || 'Untitled',
+                    body: body,
+                    isPinned: currentView === 'pinned',
+                    date: Date.now()
+                }).then(() => {
+                    showToast('Note Saved to Cloud');
+                    closeModal();
+                });
+            }
+        };
+
+        // DELETE
+        window.deleteNote = (id) => {
+            if(confirm('Delete permanently from cloud?')) {
+                remove(ref(db, 'notes/' + id))
+                    .then(() => showToast('Deleted', 'error'))
+                    .catch((err) => showToast('Error deleting', 'error'));
+            }
+        };
+
+        // PIN TOGGLE
+        window.togglePin = (id) => {
+            const note = notes.find(n => n.id === id);
+            if(note) {
+                update(ref(db, 'notes/' + id), {
+                    isPinned: !note.isPinned
+                });
+                const msg = !note.isPinned ? 'Note Pinned' : 'Note Unpinned';
+                // No need to call renderApp, onValue listener will do it automatically
+                showToast(msg);
+            }
+        };
+
+        // EDIT SETUP
+        window.editNote = (id) => {
+            const note = notes.find(n => n.id === id);
+            if(note) {
+                noteTitleInput.value = note.title;
+                noteBodyInput.value = note.body;
+                isEditing = true;
+                editId = id;
+                openModal();
+            }
+        };
+
+
+        // --- 8. UI Interactions (Modal & Toast) ---
+
+        window.openModal = () => {
+            modal.classList.remove('hidden');
+            setTimeout(() => {
+                modalContent.classList.remove('scale-95', 'opacity-0');
+                modalContent.classList.add('scale-100', 'opacity-100');
+            }, 10);
+        };
+
+        window.closeModal = () => {
+            modalContent.classList.remove('scale-100', 'opacity-100');
+            modalContent.classList.add('scale-95', 'opacity-0');
+            setTimeout(() => {
+                modal.classList.add('hidden');
+                noteTitleInput.value = '';
+                noteBodyInput.value = '';
+                isEditing = false;
+                editId = null;
+            }, 300);
+        };
+
+        window.showToast = (text, type = 'success') => {
+            const toast = document.getElementById('toast');
+            const toastMsg = document.getElementById('toastMsg');
+            const dot = document.getElementById('toastDot');
+
+            toastMsg.innerText = text;
+            dot.className = `w-2 h-2 rounded-full ${type === 'error' ? 'bg-red-500' : 'bg-green-400'}`;
+            
+            toast.classList.remove('translate-x-60', 'opacity-0');
+            setTimeout(() => {
+                toast.classList.add('translate-x-60', 'opacity-0');
+            }, 3000);
+        };
+
+        // Event Listeners for Static Elements
+        document.getElementById('addBtnDesktop').onclick = window.openModal;
+        document.getElementById('addBtnMobile').onclick = window.openModal;
+        document.getElementById('saveNoteBtn').onclick = window.saveNote;
+        document.getElementById('closeModalBtn').onclick = window.closeModal;
+        document.getElementById('modalBackdrop').onclick = window.closeModal;
+
+        searchInput.addEventListener('input', (e) => renderApp(e.target.value));
+        mobileSearchInput.addEventListener('input', (e) => renderApp(e.target.value));
+
+    </script>
+</body>
+  </html>
